@@ -1,0 +1,6 @@
+# BFF Dance - Dependencies
+# Note: hailo_platform is installed via system packages
+
+numpy>=1.21.0
+opencv-python>=4.5.0
+pygame>=2.1.0
