@@ -23,6 +23,7 @@ from src.graphics.avatar import draw_gradient_background, draw_disco_floor
 from src.graphics.articulated_avatar import ArticulatedAvatarRenderer
 from src.game.collectibles import CollectibleManager, EasterEggDetector
 from src.config.settings import settings, Theme
+from src.ui.touch_buttons import TouchButtonManager
 
 
 # === ENUMS E CONSTANTES ===
@@ -318,6 +319,7 @@ class BFFDanceGame:
         self.particles = ParticleSystem()
         self.collectibles = None
         self.easter_eggs = None
+        self.touch_buttons = None
 
         self.state = GameState.MENU
         self.mode = GameMode.FREESTYLE
@@ -325,6 +327,7 @@ class BFFDanceGame:
 
         self.fonts = {}
         self.running = True
+        self.last_poses = []  # Para os botões tocáveis
 
         # Estado do modo espelho
         self.mirror_score = 0
@@ -391,6 +394,11 @@ class BFFDanceGame:
                 return False
 
         self.avatar_renderer.set_scale(settings.camera.width, settings.camera.height)
+
+        # Botões tocáveis
+        self.touch_buttons = TouchButtonManager(self.screen_w, self.screen_h)
+        self.touch_buttons.set_scale(settings.camera.width, settings.camera.height)
+        self.touch_buttons.init_fonts()
 
         # Sistemas de jogo
         self.collectibles = CollectibleManager(Theme.CUTE)
@@ -463,15 +471,43 @@ class BFFDanceGame:
 
     def _update_menu(self):
         ret, frame = self.camera.read()
-        if ret:
-            poses = self.detector.detect(frame)
-            # Detectar gestos para selecionar modo
-            for pose in poses:
-                left_up, right_up = self._get_raised_hands(pose)
-                if left_up and right_up:
-                    # Duas mãos = iniciar
-                    self.state = GameState.SETUP
-                    self.sound.play('confirm')
+        if not ret:
+            return
+
+        poses = self.detector.detect(frame)
+        self.last_poses = poses
+
+        # Configurar botões do menu (se não estiverem)
+        if not self.touch_buttons.buttons:
+            self.touch_buttons.add_menu_buttons([
+                ("Freestyle", "mode_freestyle", "🎉"),
+                ("Espelho", "mode_mirror", "🪞"),
+                ("Desafio", "mode_challenge", "🎯"),
+            ])
+            # Botão de iniciar
+            btn_w, btn_h = 250, 80
+            self.touch_buttons.add_button(
+                self.screen_w // 2 - btn_w // 2,
+                self.screen_h - 180,
+                btn_w, btn_h,
+                "INICIAR", "start", "▶️",
+                (80, 180, 80)
+            )
+
+        # Atualizar botões com posições das mãos
+        action = self.touch_buttons.update(poses)
+
+        if action:
+            self.sound.play('confirm')
+            if action == "mode_freestyle":
+                self.mode = GameMode.FREESTYLE
+            elif action == "mode_mirror":
+                self.mode = GameMode.MIRROR
+            elif action == "mode_challenge":
+                self.mode = GameMode.CHALLENGE
+            elif action == "start":
+                self.touch_buttons.clear()
+                self.state = GameState.SETUP
 
     def _render_menu(self):
         # Background
@@ -479,46 +515,37 @@ class BFFDanceGame:
 
         # Título
         title = self.fonts['title'].render("BFF Dance", True, (255, 200, 100))
-        self.screen.blit(title, title.get_rect(center=(self.screen_w // 2, 150)))
+        self.screen.blit(title, title.get_rect(center=(self.screen_w // 2, 200)))
 
-        # Modos
-        modes = [
-            (GameMode.FREESTYLE, "Freestyle", "Dance livremente!"),
-            (GameMode.MIRROR, "Espelho", "Dancem sincronizados!"),
-            (GameMode.CHALLENGE, "Desafio", "Um faz, outro imita!"),
-        ]
+        # Subtítulo com modo selecionado
+        mode_names = {
+            GameMode.FREESTYLE: ("Freestyle", "Dance e colete itens!"),
+            GameMode.MIRROR: ("Espelho", "Dancem sincronizados!"),
+            GameMode.CHALLENGE: ("Desafio", "Um faz, outro imita!"),
+        }
+        mode_name, mode_desc = mode_names.get(self.mode, ("", ""))
 
-        y = 350
-        for i, (mode, name, desc) in enumerate(modes):
-            selected = mode == self.mode
-            color = (255, 255, 100) if selected else (200, 200, 200)
+        # Modo atual destacado
+        mode_box = pygame.Surface((500, 120), pygame.SRCALPHA)
+        pygame.draw.rect(mode_box, (60, 40, 80, 200), mode_box.get_rect(), border_radius=20)
+        pygame.draw.rect(mode_box, (255, 200, 100), mode_box.get_rect(), 3, border_radius=20)
+        self.screen.blit(mode_box, (self.screen_w // 2 - 250, 320))
 
-            # Box
-            box_w, box_h = 400, 100
-            box_x = self.screen_w // 2 - box_w // 2
-            box_surf = pygame.Surface((box_w, box_h), pygame.SRCALPHA)
-            bg_color = (80, 60, 100, 200) if selected else (40, 30, 60, 150)
-            pygame.draw.rect(box_surf, bg_color, box_surf.get_rect(), border_radius=15)
-            pygame.draw.rect(box_surf, color, box_surf.get_rect(), 3, border_radius=15)
-            self.screen.blit(box_surf, (box_x, y))
+        mode_text = self.fonts['large'].render(f"Modo: {mode_name}", True, (255, 255, 100))
+        self.screen.blit(mode_text, mode_text.get_rect(center=(self.screen_w // 2, 360)))
+        desc_text = self.fonts['medium'].render(mode_desc, True, (200, 200, 200))
+        self.screen.blit(desc_text, desc_text.get_rect(center=(self.screen_w // 2, 410)))
 
-            # Texto
-            name_text = self.fonts['large'].render(name, True, color)
-            self.screen.blit(name_text, name_text.get_rect(center=(self.screen_w // 2, y + 35)))
-            desc_text = self.fonts['small'].render(desc, True, (180, 180, 180))
-            self.screen.blit(desc_text, desc_text.get_rect(center=(self.screen_w // 2, y + 70)))
+        # Desenhar botões tocáveis
+        self.touch_buttons.draw(self.screen, self.emoji_renderer)
 
-            y += 130
+        # Desenhar cursores das mãos
+        self.touch_buttons.draw_hand_cursors(self.screen, self.last_poses)
 
         # Instruções
-        inst = "Levante as DUAS MÃOS para iniciar"
-        inst_text = self.fonts['medium'].render(inst, True, (150, 150, 150))
-        self.screen.blit(inst_text, inst_text.get_rect(center=(self.screen_w // 2, self.screen_h - 80)))
-
-        # Setas para mudar modo
-        hint = "← → para mudar modo"
-        hint_text = self.fonts['small'].render(hint, True, (100, 100, 100))
-        self.screen.blit(hint_text, hint_text.get_rect(center=(self.screen_w // 2, self.screen_h - 40)))
+        inst = "Toque nos botões com a mão para selecionar"
+        inst_text = self.fonts['small'].render(inst, True, (150, 150, 150))
+        self.screen.blit(inst_text, inst_text.get_rect(center=(self.screen_w // 2, self.screen_h - 50)))
 
     def _update_setup(self):
         """Tela de seleção de personagens"""
@@ -527,7 +554,35 @@ class BFFDanceGame:
             return
 
         poses = self.detector.detect(frame)
+        self.last_poses = poses
         current_time = time.time()
+
+        # Configurar botões do setup
+        if not self.touch_buttons.buttons:
+            self.touch_buttons.add_corner_button("Voltar", "back", "⬅️", "top-left")
+            # Botão de confirmar (aparece quando há jogadores)
+            btn_w, btn_h = 200, 70
+            self.touch_buttons.add_button(
+                self.screen_w // 2 - btn_w // 2,
+                self.screen_h - 120,
+                btn_w, btn_h,
+                "JOGAR!", "confirm_all", "🎮",
+                (80, 180, 80)
+            )
+
+        # Atualizar botões
+        action = self.touch_buttons.update(poses)
+        if action == "back":
+            self.touch_buttons.clear()
+            self.players = []
+            self.state = GameState.MENU
+            self.sound.play('back')
+            return
+        elif action == "confirm_all" and self.players:
+            for p in self.players:
+                p.confirmed = True
+            self._start_game()
+            return
 
         # Tracking de jogadores
         used_poses = set()
@@ -650,15 +705,24 @@ class BFFDanceGame:
                 waiting = self.fonts['medium'].render("Aguardando...", True, (100, 100, 100))
                 self.screen.blit(waiting, waiting.get_rect(center=(x + w // 2, y + h // 2)))
 
+        # Desenhar botões e cursores
+        self.touch_buttons.draw(self.screen, self.emoji_renderer)
+        self.touch_buttons.draw_hand_cursors(self.screen, self.last_poses)
+
         # Instruções
-        inst = self.fonts['small'].render("Mãos acima da cabeça por 2 segundos para confirmar", True, (180, 180, 180))
-        self.screen.blit(inst, inst.get_rect(center=(self.screen_w // 2, self.screen_h - 50)))
+        inst = "Toque em JOGAR quando estiver pronto!"
+        inst_text = self.fonts['small'].render(inst, True, (180, 180, 180))
+        self.screen.blit(inst_text, inst_text.get_rect(center=(self.screen_w // 2, self.screen_h - 50)))
 
     def _start_game(self):
         """Inicia o jogo após setup"""
         self.state = GameState.PLAYING
         self.game_start_time = time.time()
         self.sound.start_music()
+
+        # Limpar e configurar botões do jogo
+        self.touch_buttons.clear()
+        self.touch_buttons.add_corner_button("Sair", "exit_game", "🚪", "top-right")
 
         # Reset scores
         for player in self.players:
@@ -680,7 +744,16 @@ class BFFDanceGame:
             return
 
         poses = self.detector.detect(frame)
+        self.last_poses = poses
         current_time = time.time()
+
+        # Verificar botão de sair
+        action = self.touch_buttons.update(poses)
+        if action == "exit_game":
+            self.touch_buttons.clear()
+            self.state = GameState.RESULTS
+            self.sound.stop_music()
+            return
 
         # Tracking de jogadores
         used_poses = set()
@@ -899,6 +972,10 @@ class BFFDanceGame:
             text.set_alpha(alpha)
             self.screen.blit(text, text.get_rect(center=(msg['x'], msg['y'] - y_off)))
 
+        # Botão de sair e cursores
+        self.touch_buttons.draw(self.screen, self.emoji_renderer)
+        self.touch_buttons.draw_hand_cursors(self.screen, self.last_poses)
+
         # FPS
         fps = self.fonts['small'].render(f"FPS: {self.clock.get_fps():.0f}", True, (80, 80, 80))
         self.screen.blit(fps, (10, self.screen_h - 30))
@@ -906,15 +983,44 @@ class BFFDanceGame:
     def _update_results(self):
         """Tela de resultados"""
         ret, frame = self.camera.read()
-        if ret:
-            poses = self.detector.detect(frame)
-            for pose in poses:
-                left_up, right_up = self._get_raised_hands(pose)
-                if left_up and right_up:
-                    # Reiniciar
-                    self.state = GameState.MENU
-                    self.players = []
-                    self.sound.stop_music()
+        if not ret:
+            return
+
+        poses = self.detector.detect(frame)
+        self.last_poses = poses
+
+        # Configurar botões
+        if not self.touch_buttons.buttons:
+            btn_w, btn_h = 200, 70
+            spacing = 50
+            total_w = btn_w * 2 + spacing
+            start_x = self.screen_w // 2 - total_w // 2
+
+            self.touch_buttons.add_button(
+                start_x, self.screen_h - 150,
+                btn_w, btn_h,
+                "Jogar Novo", "play_again", "🔄",
+                (80, 150, 80)
+            )
+            self.touch_buttons.add_button(
+                start_x + btn_w + spacing, self.screen_h - 150,
+                btn_w, btn_h,
+                "Menu", "go_menu", "🏠",
+                (150, 100, 80)
+            )
+
+        action = self.touch_buttons.update(poses)
+        if action == "play_again":
+            self.touch_buttons.clear()
+            for p in self.players:
+                p.score = 0
+                p.combo = 0
+            self._start_game()
+        elif action == "go_menu":
+            self.touch_buttons.clear()
+            self.players = []
+            self.state = GameState.MENU
+            self.sound.stop_music()
 
     def _render_results(self):
         draw_gradient_background(self.screen, (30, 30, 60), (60, 30, 60))
@@ -946,9 +1052,9 @@ class BFFDanceGame:
 
             y += 100
 
-        # Instrução
-        inst = self.fonts['medium'].render("Levante as mãos para voltar ao menu", True, (150, 150, 150))
-        self.screen.blit(inst, inst.get_rect(center=(self.screen_w // 2, self.screen_h - 80)))
+        # Botões e cursores
+        self.touch_buttons.draw(self.screen, self.emoji_renderer)
+        self.touch_buttons.draw_hand_cursors(self.screen, self.last_poses)
 
     def _add_feedback(self, text: str, x: int, y: int, color: Tuple[int, int, int], big: bool = False):
         self.feedback_messages.append({
