@@ -51,9 +51,9 @@ class HailoSettings:
 @dataclass
 class DisplaySettings:
     """Configurações de exibição"""
-    width: int = 1280
-    height: int = 720
-    fullscreen: bool = False
+    width: int = 1920
+    height: int = 1080
+    fullscreen: bool = True
     fps: int = 60
     show_skeleton: bool = True
     show_keypoints: bool = True
@@ -76,8 +76,8 @@ class GameplaySettings:
 
     # Easter eggs
     heart_detection_distance: float = 50.0  # Distância máxima dos pulsos para coração
-    collectible_spawn_interval: float = 5.0 # Segundos entre spawn de coletáveis
-    collectible_grab_radius: float = 40.0   # Raio para pegar coletável
+    collectible_spawn_interval: float = 8.0 # Segundos entre spawn de coletáveis
+    collectible_grab_radius: float = 50.0  # Raio para pegar coletável (reduzido para Kinect 640x480)
 
 
 @dataclass

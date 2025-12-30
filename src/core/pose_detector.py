@@ -428,19 +428,26 @@ class CameraCapture:
         """Inicializa a câmera usando Picamera2"""
         try:
             from picamera2 import Picamera2
+            from libcamera import Transform
 
             self.picam2 = Picamera2()
 
-            # Configurar para captura de vídeo
+            # Usar modo 2304x1296 para campo de visão completo (full sensor)
+            # Depois redimensiona para o tamanho desejado
             config = self.picam2.create_video_configuration(
-                main={"size": (settings.camera.width, settings.camera.height),
-                      "format": "RGB888"},
-                controls={"FrameRate": settings.camera.fps}
+                main={"size": (2304, 1296), "format": "RGB888"},
+                controls={"FrameRate": 30},
+                transform=Transform(hflip=0, vflip=0)  # Sem flip na captura
             )
+
+            # Forçar uso do sensor completo (sem crop)
             self.picam2.configure(config)
             self.picam2.start()
 
-            print(f"[INFO] Câmera Picamera2 inicializada: {settings.camera.width}x{settings.camera.height}")
+            # Guardar tamanho de saída desejado
+            self._output_size = (settings.camera.width, settings.camera.height)
+
+            print(f"[INFO] Câmera Picamera2 inicializada: 2304x1296 (full FOV) -> {self._output_size}")
 
             self._initialized = True
             return True
@@ -461,6 +468,9 @@ class CameraCapture:
             frame = self.picam2.capture_array()
             # Converter RGB para BGR (OpenCV format)
             frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            # Redimensionar para tamanho de saída
+            if hasattr(self, '_output_size'):
+                frame_bgr = cv2.resize(frame_bgr, self._output_size)
             return True, frame_bgr
         except Exception as e:
             print(f"[WARN] Erro ao capturar frame: {e}")
