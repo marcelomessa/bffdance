@@ -433,8 +433,33 @@ class BFFDanceGame:
                         self.state = GameState.RESULTS
                     elif self.state in (GameState.SETUP, GameState.RESULTS):
                         self.state = GameState.MENU
+                        self.players = []
+                        self.sound.stop_music()
                     else:
                         self.running = False
+                # Navegação no menu
+                elif self.state == GameState.MENU:
+                    if event.key in (pygame.K_UP, pygame.K_w):
+                        modes = list(GameMode)
+                        idx = modes.index(self.mode)
+                        self.mode = modes[(idx - 1) % len(modes)]
+                        self.sound.play('click')
+                    elif event.key in (pygame.K_DOWN, pygame.K_s):
+                        modes = list(GameMode)
+                        idx = modes.index(self.mode)
+                        self.mode = modes[(idx + 1) % len(modes)]
+                        self.sound.play('click')
+                    elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                        self.state = GameState.SETUP
+                        self.sound.play('confirm')
+                # Atalhos no setup
+                elif self.state == GameState.SETUP:
+                    if event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                        # Confirmar todos os jogadores detectados
+                        for p in self.players:
+                            p.confirmed = True
+                        if self.players:
+                            self._start_game()
 
     def _update_menu(self):
         ret, frame = self.camera.read()
